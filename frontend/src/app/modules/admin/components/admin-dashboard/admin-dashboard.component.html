@@ -1,0 +1,109 @@
+<div class="page">
+  <app-navbar title="Administración"></app-navbar>
+
+  <div class="content">
+    <div class="tabs">
+      <button type="button" [class.active]="tab === 'espacios'" (click)="tab = 'espacios'">
+        Espacios ({{ espacios.length }})
+      </button>
+      <button type="button" [class.active]="tab === 'reservas'" (click)="tab = 'reservas'">
+        Reservas ({{ reservas.length }})
+      </button>
+    </div>
+
+    <div *ngIf="error" class="error-message">{{ error }}</div>
+    <div *ngIf="exito" class="success-message">{{ exito }}</div>
+
+    <!-- Espacios -->
+    <ng-container *ngIf="tab === 'espacios'">
+      <div class="toolbar">
+        <button type="button" class="btn" (click)="nuevo()">+ Nuevo espacio</button>
+      </div>
+
+      <div *ngIf="editando" class="card">
+        <h2>{{ editando.id ? 'Editar espacio' : 'Nuevo espacio' }}</h2>
+        <form [formGroup]="espacioForm" (ngSubmit)="guardar()">
+          <div class="toolbar">
+            <label class="field">
+              Nombre
+              <input type="text" formControlName="nombre" />
+            </label>
+            <label class="field">
+              Tipo
+              <select formControlName="tipo">
+                <option *ngFor="let t of tipos" [value]="t.value">{{ t.label }}</option>
+              </select>
+            </label>
+            <label class="field">
+              Capacidad
+              <input type="number" min="1" formControlName="capacidad" />
+            </label>
+            <label class="field">
+              Apertura
+              <input type="time" formControlName="horarioApertura" />
+            </label>
+            <label class="field">
+              Cierre
+              <input type="time" formControlName="horarioCierre" />
+            </label>
+          </div>
+          <label class="field" style="margin-bottom: 16px">
+            Descripción
+            <textarea rows="2" formControlName="descripcion"></textarea>
+          </label>
+          <div class="toolbar">
+            <button type="submit" class="btn" [disabled]="espacioForm.invalid || guardando">
+              {{ guardando ? 'Guardando...' : 'Guardar' }}
+            </button>
+            <button type="button" class="btn btn-secondary" (click)="cerrarFormulario()">Cancelar</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <table class="table" *ngIf="espacios.length; else sinEspacios">
+          <thead>
+            <tr><th>Nombre</th><th>Tipo</th><th>Capacidad</th><th>Horario</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let e of espacios">
+              <td>{{ e.nombre }}</td>
+              <td>{{ etiquetaTipo(e.tipo) }}</td>
+              <td>{{ e.capacidad }}</td>
+              <td>{{ e.horarioApertura | hora }} – {{ e.horarioCierre | hora }}</td>
+              <td style="white-space: nowrap">
+                <button type="button" class="btn btn-secondary btn-sm" (click)="editar(e)">Editar</button>
+                &nbsp;
+                <button type="button" class="btn btn-danger btn-sm" (click)="eliminar(e)">Eliminar</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <ng-template #sinEspacios><p class="muted">No hay espacios.</p></ng-template>
+      </div>
+    </ng-container>
+
+    <!-- Reservas -->
+    <div *ngIf="tab === 'reservas'" class="card">
+      <table class="table" *ngIf="reservas.length; else sinReservas">
+        <thead>
+          <tr><th>Fecha</th><th>Espacio</th><th>Horario</th><th>Usuario</th><th>Estado</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let r of reservas">
+            <td>{{ r.fecha | date:'dd/MM/yyyy' }}</td>
+            <td>{{ r.espacio.nombre }}</td>
+            <td>{{ r.horaInicio | hora }} – {{ r.horaFin | hora }}</td>
+            <td>{{ r.usuario.firstName }} {{ r.usuario.lastName }} <span class="muted">({{ r.usuario.email }})</span></td>
+            <td><span class="badge" [ngClass]="r.estado">{{ r.estado }}</span></td>
+            <td>
+              <button *ngIf="r.estado === 'CONFIRMADA'" type="button" class="btn btn-danger btn-sm"
+                      (click)="cancelarReserva(r)">Cancelar</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <ng-template #sinReservas><p class="muted">No hay reservas.</p></ng-template>
+    </div>
+  </div>
+</div>

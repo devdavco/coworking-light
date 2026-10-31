@@ -1,0 +1,32 @@
+# Compiled sources
+*.class
+*.jar
+*.war
+target/
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Maven
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+
+# Environment / secretos
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log

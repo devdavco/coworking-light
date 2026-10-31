@@ -1,0 +1,21 @@
+# Perfil de producción. Sin valores por defecto para secretos:
+# si falta alguna variable la aplicación no arranca (fail fast).
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+jwt:
+  secret: ${JWT_SECRET}
+
+springdoc:
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+
+logging:
+  level:
+    root: WARN
+    com.coworking: INFO

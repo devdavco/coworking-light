@@ -1,0 +1,19 @@
+# Perfil de desarrollo local. Valores por defecto pensados para docker-compose / localhost.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/coworking_db}
+    username: ${DB_USER:coworking_user}
+    password: ${DB_PASSWORD:coworking_password}
+  jpa:
+    show-sql: true
+
+jwt:
+  secret: ${JWT_SECRET:dev-secret-key-change-in-production-256-bits-minimum-required-for-hs256}
+
+app:
+  admin:
+    password: ${ADMIN_PASSWORD:admin123}
+
+logging:
+  level:
+    com.coworking: DEBUG

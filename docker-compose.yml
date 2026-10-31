@@ -1,0 +1,46 @@
+# Entorno LOCAL de desarrollo: docker compose up --build
+# Valores por defecto inseguros a propósito; para producción usa docker-compose.prod.yml
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: coworking_db
+    environment:
+      POSTGRES_DB: coworking_db
+      POSTGRES_USER: coworking_user
+      POSTGRES_PASSWORD: coworking_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coworking_user -d coworking_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: coworking_backend
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://postgres:5432/coworking_db
+      DB_USER: coworking_user
+      DB_PASSWORD: coworking_password
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: coworking_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

@@ -1,0 +1,91 @@
+<div class="page">
+  <app-navbar title="Cliente"></app-navbar>
+
+  <div class="content">
+    <div class="tabs">
+      <button type="button" [class.active]="tab === 'reservar'" (click)="tab = 'reservar'">Reservar</button>
+      <button type="button" [class.active]="tab === 'mis-reservas'" (click)="tab = 'mis-reservas'">
+        Mis reservas ({{ reservas.length }})
+      </button>
+    </div>
+
+    <div *ngIf="error" class="error-message">{{ error }}</div>
+    <div *ngIf="exito" class="success-message">{{ exito }}</div>
+
+    <!-- Reservar -->
+    <ng-container *ngIf="tab === 'reservar'">
+      <div class="toolbar">
+        <label class="field">
+          Tipo de espacio
+          <select [(ngModel)]="filtroTipo" (ngModelChange)="cargarEspacios()">
+            <option value="">Todos</option>
+            <option *ngFor="let t of tipos" [value]="t.value">{{ t.label }}</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="grid">
+        <div *ngFor="let e of espacios" class="card espacio-card"
+             [class.selected]="e.id === seleccionado?.id" (click)="seleccionar(e)">
+          <h3>{{ e.nombre }}</h3>
+          <p>{{ etiquetaTipo(e.tipo) }} · {{ e.capacidad }} personas</p>
+          <p>Horario: {{ e.horarioApertura | hora }} – {{ e.horarioCierre | hora }}</p>
+          <p *ngIf="e.descripcion">{{ e.descripcion }}</p>
+        </div>
+        <p *ngIf="espacios.length === 0" class="muted">No hay espacios disponibles.</p>
+      </div>
+
+      <div *ngIf="seleccionado" class="card" style="margin-top: 20px">
+        <h2>Reservar «{{ seleccionado.nombre }}»</h2>
+
+        <form [formGroup]="reservaForm" (ngSubmit)="reservar()" class="toolbar">
+          <label class="field">
+            Fecha
+            <input type="date" formControlName="fecha" [min]="hoy" (change)="cargarDisponibilidad()" />
+          </label>
+          <label class="field">
+            Desde
+            <input type="time" formControlName="horaInicio" step="1800" />
+          </label>
+          <label class="field">
+            Hasta
+            <input type="time" formControlName="horaFin" step="1800" />
+          </label>
+          <button type="submit" class="btn" [disabled]="reservaForm.invalid || guardando">
+            {{ guardando ? 'Reservando...' : 'Reservar' }}
+          </button>
+        </form>
+
+        <p class="muted">Duración entre 1 y 8 horas. Franjas libres ese día:</p>
+        <div class="franjas" *ngIf="franjas; else cargando">
+          <span *ngFor="let f of franjas">{{ f.horaInicio | hora }} – {{ f.horaFin | hora }}</span>
+          <p *ngIf="franjas.length === 0" class="muted">Sin huecos libres.</p>
+        </div>
+        <ng-template #cargando><p class="muted">Cargando...</p></ng-template>
+      </div>
+    </ng-container>
+
+    <!-- Mis reservas -->
+    <div *ngIf="tab === 'mis-reservas'" class="card">
+      <table class="table" *ngIf="reservas.length; else vacio">
+        <thead>
+          <tr><th>Fecha</th><th>Espacio</th><th>Horario</th><th>Estado</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let r of reservas">
+            <td>{{ r.fecha | date:'dd/MM/yyyy' }}</td>
+            <td>{{ r.espacio.nombre }}</td>
+            <td>{{ r.horaInicio | hora }} – {{ r.horaFin | hora }}</td>
+            <td><span class="badge" [ngClass]="r.estado">{{ r.estado }}</span></td>
+            <td>
+              <button *ngIf="esCancelable(r)" type="button" class="btn btn-danger btn-sm" (click)="cancelar(r)">
+                Cancelar
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <ng-template #vacio><p class="muted">Todavía no tienes reservas.</p></ng-template>
+    </div>
+  </div>
+</div>
