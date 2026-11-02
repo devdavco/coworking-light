@@ -89,6 +89,7 @@ JWT_SECRET=<openssl rand -base64 48>
 ADMIN_PASSWORD=<password del admin inicial>
 DOCKERHUB_USER=<tu-usuario>
 IMAGE_TAG=1.0.0
+CORS_ALLOWED_ORIGINS=https://coworking.davidcorrales.dev,https://<id>.cloudfront.net
 ```
 
 ```bash
@@ -98,7 +99,8 @@ docker compose -f docker-compose.prod.yml ps          # backend y frontend "heal
 docker compose -f docker-compose.prod.yml logs backend | grep -i flyway
 ```
 
-Abre `http://<IP_PUBLICA>` e inicia sesión con `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+Abre `https://coworking.davidcorrales.dev` (o `http://<ELASTIC_IP>` para probar sin CloudFront) e
+inicia sesión con `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 
 > Si falta una variable obligatoria (`DB_URL`, `DB_PASSWORD`, `JWT_SECRET`, `IMAGE_TAG`…),
 > `docker compose` se niega a arrancar e indica cuál. Es intencionado.
@@ -136,16 +138,46 @@ docker compose -f docker-compose.prod.yml exec frontend wget -qO- http://backend
 | `SWAGGER_ENABLED` | siempre activo en dev | `false` por defecto |
 | `FRONTEND_PORT` | Puerto local del frontend (`80`) | — (siempre 80) |
 | `DOCKERHUB_USER` / `IMAGE_TAG` | — | **Obligatorias** — imágenes a usar |
+| `CORS_ALLOWED_ORIGINS` | no hace falta (mismo origen) | **Necesaria detrás de CloudFront**: dominios HTTPS separados por coma |
 | `BACKEND_URL` (contenedor frontend) | `http://backend:8080` | `http://backend:8080` |
 
-## HTTPS (opcional)
+## Dominio y HTTPS (configuración actual)
 
-Sin dominio propio: una distribución de **CloudFront** con la EC2 como origen (HTTP:80),
-*Redirect HTTP to HTTPS* y caché desactivada para `/api/*`. Con dominio: **ALB** + certificado
-de **ACM**. El backend ya respeta `X-Forwarded-Proto` (`server.forward-headers-strategy`).
+La app se publica en **https://coworking.davidcorrales.dev**:
+
+```
+Navegador ──HTTPS──▶ CloudFront (certificado ACM + WAF) ──HTTP:80──▶ EC2 (Elastic IP) ──▶ nginx ──▶ backend
+```
+
+1. **Elastic IP** `18.235.22.232` asociada a la EC2, para que la IP no cambie al reiniciar.
+2. **Certificado ACM** para `coworking.davidcorrales.dev`, creado en **us-east-1** (obligatorio para
+   CloudFront) y validado por DNS con un CNAME `_xxxx.coworking` en Namecheap. Ese CNAME no se
+   borra: ACM lo usa para renovar el certificado.
+3. **Distribución CloudFront** (plan Free):
+   - Origen: tipo *Other*, el *Public IPv4 DNS* de la EC2 (`ec2-18-235-22-232.compute-1.amazonaws.com`),
+     protocolo **HTTP only**, puerto 80.
+   - *Viewer protocol policy*: Redirect HTTP to HTTPS. Métodos: GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE.
+   - *Cache policy* **CachingDisabled** + *Origin request policy* **AllViewer**, para que el header
+     `Authorization` (JWT) llegue a la API y no se cacheen respuestas de un usuario.
+   - Dominio alternativo `coworking.davidcorrales.dev` con el certificado de ACM.
+4. **DNS en Namecheap**: CNAME `coworking` → `<id>.cloudfront.net`.
+5. **CORS**: `CORS_ALLOWED_ORIGINS` en el `.env` de la EC2 con los orígenes HTTPS. Entre CloudFront y
+   nginx la petición llega por HTTP, así que Spring ve el `Origin: https://…` como otro sitio y, sin
+   esa variable, responde `403 Invalid CORS request` al login.
+
+> Los dominios `.dev` exigen HTTPS en todos los navegadores (HSTS precargado): sin CloudFront no
+> se pueden abrir por `http://`.
+
+Mejora opcional: en el security group de la EC2, limitar el puerto 80 a la *prefix list*
+`com.amazonaws.global.cloudfront.origin-facing` para que nadie entre directo por la IP saltándose
+CloudFront y su WAF.
 
 ## Coste y limpieza
 
-Con capa gratuita, EC2 `t3.micro` + RDS `db.t3.micro` cuestan 0 € los primeros 12 meses.
-Al terminar el curso: **termina la EC2**, **borra la instancia RDS** (y sus snapshots) y libera
-la Elastic IP (cobra si no está asociada).
+Con capa gratuita, EC2 `t3.micro` + RDS `db.t3.micro` cuestan 0 € los primeros 12 meses. CloudFront
+está en el plan Free (0 USD/mes, sin cargos por exceso). Toda IPv4 pública, incluida la Elastic IP,
+cuesta unos 0,005 USD/hora, esté o no asociada.
+
+Al terminar el curso: **deshabilita y borra la distribución de CloudFront**, **termina la EC2**,
+**borra la instancia RDS** (y sus snapshots) y **libera la Elastic IP**. Puedes borrar también el
+certificado de ACM y los registros `coworking` en Namecheap.
