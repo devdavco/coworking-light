@@ -1,6 +1,5 @@
+# El perfil activo (dev | prod) se elige con la variable SPRING_PROFILES_ACTIVE.
 spring:
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
   application:
     name: coworking-backend
 
@@ -38,6 +37,8 @@ server:
     include-binding-errors: never
 
 jwt:
+  # Sin valor por defecto: la app no arranca si falta JWT_SECRET (min. 32 bytes)
+  secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:3600000}
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
 

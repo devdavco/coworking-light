@@ -1,18 +1,12 @@
-# Perfil de desarrollo local. Valores por defecto pensados para docker-compose / localhost.
+# Perfil de desarrollo local (docker compose o IDE con PostgreSQL en localhost).
+# Los secretos (DB_PASSWORD, JWT_SECRET, ADMIN_PASSWORD) vienen siempre del entorno / .env.
 spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/coworking_db}
-    username: ${DB_USER:coworking_user}
-    password: ${DB_PASSWORD:coworking_password}
+    username: ${DB_USERNAME:coworking_user}
+    password: ${DB_PASSWORD}
   jpa:
     show-sql: true
-
-jwt:
-  secret: ${JWT_SECRET:dev-secret-key-change-in-production-256-bits-minimum-required-for-hs256}
-
-app:
-  admin:
-    password: ${ADMIN_PASSWORD:admin123}
 
 logging:
   level:

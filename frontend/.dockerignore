@@ -1,7 +1,11 @@
-node_modules
-dist
-.angular
-.idea
-.vscode
+node_modules/
+dist/
+.angular/
+.idea/
+.vscode/
+.env
+.env.*
 *.log
 .DS_Store
+Dockerfile
+.dockerignore

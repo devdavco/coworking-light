@@ -1,43 +1,62 @@
-# Despliegue en AWS
-
-Arquitectura recomendada para un proyecto académico: **una instancia EC2 con Docker Compose**.
-Es la opción más simple y barata (entra en la capa gratuita) y usa exactamente los mismos
-contenedores que en local.
+# Despliegue en AWS (EC2 + RDS)
 
 ```
-Internet ──80──▶ EC2 ─┬─ frontend (nginx)  ── sirve la SPA y hace proxy de /api
-                      ├─ backend (Spring)  ── solo red interna Docker
-                      └─ postgres          ── solo red interna Docker (volumen persistente)
+Internet ──80──▶ EC2 ─┬─ frontend (nginx)  ── sirve la SPA y hace proxy de /api ──┐
+                      └─ backend (Spring)  ── solo red interna Docker  ◀──────────┘
+                                │
+                                └──5432──▶ Amazon RDS (PostgreSQL 16)
 ```
 
-Solo el puerto 80 queda expuesto. El backend y la base de datos no son accesibles desde fuera.
+Solo el puerto 80 de la EC2 queda expuesto. El backend no publica puertos y RDS solo acepta
+conexiones desde el security group de la EC2. Las imágenes se construyen en el Mac y se
+publican en Docker Hub; la EC2 solo hace `pull`.
 
 ---
 
-## 1. Crear la instancia EC2
+## 1. Construir y subir las imágenes (desde el Mac)
 
-1. Consola AWS → **EC2 → Launch instance**
-   - AMI: **Amazon Linux 2023**
-   - Tipo: `t3.small` (recomendado) o `t3.micro` / `t2.micro` (capa gratuita, ver paso 3: swap)
-   - Key pair: crea o selecciona una para conectarte por SSH
-   - Almacenamiento: 20 GB gp3
-2. **Security group** (reglas de entrada):
-   | Puerto | Origen | Uso |
-   |---|---|---|
-   | 22 | *Mi IP* | SSH |
-   | 80 | 0.0.0.0/0 | Aplicación web |
-3. (Opcional) Asigna una **Elastic IP** para que la IP pública no cambie al reiniciar.
+El Mac es Apple Silicon (arm64) y la EC2 es x86 (amd64): **hay que construir con
+`--platform linux/amd64`**, si no el contenedor falla en la EC2 con `exec format error`.
 
-## 2. Instalar Docker
+```bash
+docker login
+
+export DOCKERHUB_USER=<tu-usuario>
+export TAG=1.0.0          # sube la versión en cada despliegue; no uses solo latest
+
+docker buildx build --platform linux/amd64 \
+  -t $DOCKERHUB_USER/coworking-backend:$TAG ./backend --push
+
+docker buildx build --platform linux/amd64 \
+  -t $DOCKERHUB_USER/coworking-frontend:$TAG ./frontend --push
+```
+
+> Para añadir también `latest`, repite `-t $DOCKERHUB_USER/coworking-backend:latest` en el
+> mismo comando. El compose de producción usa siempre el tag explícito (`IMAGE_TAG`).
+
+## 2. Crear la base de datos en RDS
+
+1. **RDS → Create database** → PostgreSQL 16, plantilla *Free tier*, `db.t3.micro`.
+2. Nombre inicial de la base: `coworking_db` (en *Additional configuration*). Flyway crea las
+   tablas al primer arranque del backend.
+3. Misma VPC que la EC2, **Public access: No**.
+4. Security group de RDS: entrada TCP 5432 **solo desde el security group de la EC2**.
+
+## 3. Crear la instancia EC2
+
+- AMI **Amazon Linux 2023**, tipo `t3.micro`/`t2.micro` (capa gratuita) o `t3.small`.
+- Security group: 22 desde *Mi IP* (SSH), 80 desde `0.0.0.0/0`.
+- (Opcional) **Elastic IP** para que la IP pública no cambie.
+
+Instalar Docker y el plugin compose:
 
 ```bash
 ssh -i mi-clave.pem ec2-user@<IP_PUBLICA>
 
-sudo dnf install -y docker git
+sudo dnf install -y docker
 sudo systemctl enable --now docker
 sudo usermod -aG docker ec2-user
 
-# Plugin docker compose
 sudo mkdir -p /usr/local/lib/docker/cli-plugins
 sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m) \
   -o /usr/local/lib/docker/cli-plugins/docker-compose
@@ -46,111 +65,87 @@ sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 exit   # vuelve a entrar para que se aplique el grupo docker
 ```
 
-> Si `docker compose build` pide una versión más reciente de **buildx**, descarga el binario
-> desde https://github.com/docker/buildx/releases a `/usr/local/lib/docker/cli-plugins/docker-buildx`
-> y dale permisos de ejecución.
+Como en la EC2 no se compila nada, 1 GB de RAM es suficiente (el backend está limitado a 512 MB).
 
-## 3. (Solo instancias de 1 GB) Añadir swap
+## 4. Desplegar en la EC2
 
-Compilar Maven y Angular en una máquina de 1 GB puede quedarse sin memoria:
+Solo hacen falta dos ficheros: `docker-compose.prod.yml` y `.env`.
 
 ```bash
-sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
-sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile swap swap defaults 0 0' | sudo tee -a /etc/fstab
-```
-
-## 4. Desplegar
-
-```bash
-git clone <URL_DE_TU_REPO> coworking && cd coworking
+mkdir ~/coworking && cd ~/coworking
+# desde el Mac:  scp -i mi-clave.pem docker-compose.prod.yml .env.example ec2-user@<IP>:~/coworking/
 
 cp .env.example .env
-# Genera secretos y edítalos en .env:
-openssl rand -base64 48   # -> JWT_SECRET
-openssl rand -hex 16      # -> POSTGRES_PASSWORD
 nano .env
-
-docker compose -f docker-compose.prod.yml --env-file .env up -d --build
-docker compose -f docker-compose.prod.yml ps        # los 3 servicios deben quedar "healthy"
 ```
 
-Abre `http://<IP_PUBLICA>` e inicia sesión con `ADMIN_EMAIL` / `ADMIN_PASSWORD` del `.env`.
+Valores mínimos en `.env`:
 
-> Si falta alguna variable obligatoria (`JWT_SECRET`, `POSTGRES_PASSWORD`, `ADMIN_PASSWORD`…),
-> `docker compose` se niega a arrancar y muestra cuál falta. Es intencionado.
+```
+DB_URL=jdbc:postgresql://<endpoint-rds>.rds.amazonaws.com:5432/coworking_db?sslmode=require
+DB_USERNAME=<usuario RDS>
+DB_PASSWORD=<password RDS>
+JWT_SECRET=<openssl rand -base64 48>
+ADMIN_PASSWORD=<password del admin inicial>
+DOCKERHUB_USER=<tu-usuario>
+IMAGE_TAG=1.0.0
+```
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml ps          # backend y frontend "healthy"
+docker compose -f docker-compose.prod.yml logs backend | grep -i flyway
+```
+
+Abre `http://<IP_PUBLICA>` e inicia sesión con `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+
+> Si falta una variable obligatoria (`DB_URL`, `DB_PASSWORD`, `JWT_SECRET`, `IMAGE_TAG`…),
+> `docker compose` se niega a arrancar e indica cuál. Es intencionado.
 
 ### Actualizar a una nueva versión
 
-```bash
-git pull
-docker compose -f docker-compose.prod.yml --env-file .env up -d --build
-```
+1. En el Mac: construye y sube con un tag nuevo (p. ej. `1.0.1`).
+2. En la EC2: cambia `IMAGE_TAG=1.0.1` en `.env` y ejecuta
+   `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d`.
 
-Las migraciones de base de datos (Flyway) se aplican solas al arrancar el backend.
+Para volver atrás basta con restaurar el tag anterior. Las migraciones de Flyway se aplican
+solas al arrancar el backend (nunca edites una migración ya aplicada: crea una `V<n+1>__...sql`).
 
-### Logs y diagnóstico
+### Diagnóstico
 
 ```bash
 docker compose -f docker-compose.prod.yml logs -f backend
-docker compose -f docker-compose.prod.yml exec postgres psql -U <POSTGRES_USER> coworking_db
-```
-
-### Copia de seguridad de la base de datos
-
-```bash
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U <POSTGRES_USER> coworking_db > backup_$(date +%F).sql
+docker compose -f docker-compose.prod.yml exec frontend wget -qO- http://backend:8080/actuator/health
 ```
 
 ---
 
-## Mejoras opcionales
+## Variables de entorno
 
-### Base de datos gestionada (Amazon RDS)
-
-1. Crea una instancia **RDS PostgreSQL 16** (`db.t3.micro`, capa gratuita) en la misma VPC.
-2. En el security group de RDS, permite el puerto 5432 **solo** desde el security group de la EC2.
-3. En `.env`:
-   ```
-   DB_URL=jdbc:postgresql://<endpoint-rds>:5432/coworking_db
-   POSTGRES_USER=<usuario RDS>
-   POSTGRES_PASSWORD=<password RDS>
-   ```
-4. En `docker-compose.prod.yml` elimina el servicio `postgres`, su volumen y el
-   `depends_on: postgres` del backend.
-
-### HTTPS
-
-La forma más sencilla sin dominio propio: crea una distribución de **CloudFront** con la EC2 como
-origen (HTTP, puerto 80), *Viewer protocol policy* "Redirect HTTP to HTTPS" y caché desactivada
-para `/api/*`. Obtendrás una URL `https://xxxx.cloudfront.net`.
-Con dominio propio: **Application Load Balancer** + certificado gratuito de **ACM**.
-
-### Contenedores gestionados (ECS Fargate)
-
-Para una arquitectura más "cloud native": sube las imágenes a **ECR**, crea un servicio **ECS
-Fargate** por contenedor detrás de un **ALB** (`/api/*` → backend, resto → frontend) y usa
-**RDS**. Pasa los secretos con **Secrets Manager / SSM Parameter Store** en lugar de `.env`.
-El health check del ALB para el backend es `GET /actuator/health`.
-
----
-
-## Variables de entorno (perfil `prod`)
-
-| Variable | Obligatoria | Descripción |
+| Variable | dev (`docker-compose.yml`) | prod (`docker-compose.prod.yml`) |
 |---|---|---|
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` | Sí | Credenciales de la BD |
-| `POSTGRES_DB` | No (`coworking_db`) | Nombre de la BD |
-| `DB_URL` | No | JDBC URL; por defecto el contenedor `postgres` |
-| `JWT_SECRET` | Sí | ≥ 32 bytes. `openssl rand -base64 48` |
-| `ADMIN_EMAIL` | No (`admin@coworking.com`) | Admin creado en el primer arranque |
-| `ADMIN_PASSWORD` | Sí | Contraseña de ese admin |
-| `APP_TIMEZONE` | No (`America/Bogota`) | Zona horaria del coworking |
-| `JWT_EXPIRATION` | No (`3600000`) | Duración del token en ms |
+| `SPRING_PROFILES_ACTIVE` | `dev` (fijado en el compose) | `prod` (fijado en el compose) |
+| `DB_URL` | la fija el compose (contenedor `postgres`) | **Obligatoria** — JDBC de RDS |
+| `DB_NAME` | Nombre de la BD local (`coworking_db`) | — |
+| `DB_USERNAME` / `DB_PASSWORD` | **Obligatorias** — crean el postgres local | **Obligatorias** — credenciales RDS |
+| `JWT_SECRET` | **Obligatoria** (≥ 32 bytes) | **Obligatoria** (≥ 32 bytes) |
+| `JWT_EXPIRATION` | `3600000` ms | `3600000` ms |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Admin inicial (vacío = no se crea) | Igual |
+| `APP_TIMEZONE` | `America/Bogota` | `America/Bogota` |
+| `SWAGGER_ENABLED` | siempre activo en dev | `false` por defecto |
+| `FRONTEND_PORT` | Puerto local del frontend (`80`) | — (siempre 80) |
+| `DOCKERHUB_USER` / `IMAGE_TAG` | — | **Obligatorias** — imágenes a usar |
+| `BACKEND_URL` (contenedor frontend) | `http://backend:8080` | `http://backend:8080` |
+
+## HTTPS (opcional)
+
+Sin dominio propio: una distribución de **CloudFront** con la EC2 como origen (HTTP:80),
+*Redirect HTTP to HTTPS* y caché desactivada para `/api/*`. Con dominio: **ALB** + certificado
+de **ACM**. El backend ya respeta `X-Forwarded-Proto` (`server.forward-headers-strategy`).
 
 ## Coste y limpieza
 
-Con capa gratuita, una EC2 `t3.micro` + 20 GB de EBS cuesta 0 € los primeros 12 meses.
-Al terminar el curso: **termina la instancia**, libera la Elastic IP (cobra si no está asociada)
-y borra RDS/CloudFront si los creaste.
+Con capa gratuita, EC2 `t3.micro` + RDS `db.t3.micro` cuestan 0 € los primeros 12 meses.
+Al terminar el curso: **termina la EC2**, **borra la instancia RDS** (y sus snapshots) y libera
+la Elastic IP (cobra si no está asociada).

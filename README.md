@@ -36,6 +36,7 @@ coworking-booking-kiro/
 Requisito: Docker.
 
 ```bash
+cp .env.example .env   # rellena DB_PASSWORD, JWT_SECRET y ADMIN_PASSWORD
 docker compose up --build
 ```
 
@@ -43,7 +44,7 @@ docker compose up --build
 - API: http://localhost:8080/api · Swagger: http://localhost:8080/swagger-ui.html
 - Health: http://localhost:8080/actuator/health
 
-Usuario admin de desarrollo: `admin@coworking.com` / `admin123`
+Usuario admin de desarrollo: `admin@coworking.com` / el `ADMIN_PASSWORD` de tu `.env`
 (los clientes se crean desde la pantalla de registro).
 
 Para empezar con la base de datos vacía: `docker compose down -v`.

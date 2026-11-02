@@ -1,43 +1,47 @@
-# Entorno LOCAL de desarrollo: docker compose up --build
-# Valores por defecto inseguros a propósito; para producción usa docker-compose.prod.yml
+# Entorno LOCAL de desarrollo (perfil dev). Variables desde .env (cp .env.example .env):
+#   docker compose up --build
+# Flyway crea el esquema al arrancar el backend. Para empezar de cero: docker compose down -v
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: coworking_db
     environment:
-      POSTGRES_DB: coworking_db
-      POSTGRES_USER: coworking_user
-      POSTGRES_PASSWORD: coworking_password
+      POSTGRES_DB: ${DB_NAME:-coworking_db}
+      POSTGRES_USER: ${DB_USERNAME:?Define DB_USERNAME en .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
     ports:
-      - "5432:5432"
+      - "5432:5432"   # para conectarse desde el IDE / psql local
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U coworking_user -d coworking_db"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   backend:
     build: ./backend
-    container_name: coworking_backend
     environment:
       SPRING_PROFILES_ACTIVE: dev
-      DB_URL: jdbc:postgresql://postgres:5432/coworking_db
-      DB_USER: coworking_user
-      DB_PASSWORD: coworking_password
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-coworking_db}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@coworking.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Bogota}
     ports:
-      - "8080:8080"
+      - "8080:8080"   # acceso directo a la API / Swagger en desarrollo
     depends_on:
       postgres:
         condition: service_healthy
 
   frontend:
     build: ./frontend
-    container_name: coworking_frontend
+    environment:
+      BACKEND_URL: http://backend:8080
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
       backend:
         condition: service_healthy

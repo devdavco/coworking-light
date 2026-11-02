@@ -1,4 +1,11 @@
-target
-.idea
+target/
+build/
+.idea/
+.vscode/
 *.iml
+.env
+.env.*
+*.log
 .DS_Store
+Dockerfile
+.dockerignore

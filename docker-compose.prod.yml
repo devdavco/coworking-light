@@ -1,50 +1,36 @@
-# PRODUCCIÓN (p.ej. una instancia EC2). Requiere un fichero .env (ver .env.example):
-#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
-# Solo se publica el puerto 80 (nginx). Postgres y backend quedan en la red interna.
+# PRODUCCIÓN en EC2 con la base de datos en Amazon RDS (sin contenedor postgres).
+# Usa imágenes ya publicadas en Docker Hub. Requiere un .env junto a este fichero:
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+# Solo el frontend (nginx) publica el puerto 80; el backend queda en la red interna de Docker.
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-coworking_db}
-      POSTGRES_USER: ${POSTGRES_USER:?Define POSTGRES_USER en .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   backend:
-    build: ./backend
+    image: ${DOCKERHUB_USER:?Define DOCKERHUB_USER en .env}/coworking-backend:${IMAGE_TAG:?Define IMAGE_TAG en .env}
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      DB_URL: ${DB_URL:-jdbc:postgresql://postgres:5432/coworking_db}
-      DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_URL: ${DB_URL:?Define DB_URL en .env}
+      DB_USERNAME: ${DB_USERNAME:?Define DB_USERNAME en .env}
+      DB_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
       JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-3600000}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@coworking.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Define ADMIN_PASSWORD en .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Bogota}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
     mem_limit: 512m
-    depends_on:
-      postgres:
-        condition: service_healthy
+    expose:
+      - "8080"
 
   frontend:
-    build: ./frontend
+    image: ${DOCKERHUB_USER}/coworking-frontend:${IMAGE_TAG}
     restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8080
     ports:
       - "80:80"
     depends_on:
       backend:
         condition: service_healthy
-
-volumes:
-  postgres_data:

@@ -133,7 +133,7 @@ coworking-booking-kiro/                          [Raíz del Proyecto]
 │   ├── tsconfig.spec.json
 │   ├── karma.conf.js                             [Karma config]
 │   ├── .browserslistrc
-│   ├── nginx.conf                                [Nginx config]
+│   ├── nginx/default.conf.template               [Nginx config (BACKEND_URL)]
 │   ├── Dockerfile                                [Frontend container]
 │   └── .gitignore
 │

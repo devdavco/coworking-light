@@ -27,6 +27,8 @@ dist/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
 
 # Logs
 *.log
